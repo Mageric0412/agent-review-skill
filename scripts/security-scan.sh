@@ -1,6 +1,6 @@
 #!/bin/bash
 # Security Scanner for Agent Intelligent Bodies
-# Detects common security issues in agent/skill source code
+# Detects common security issues in Python, Java, JavaScript, TypeScript source code
 
 set -e
 
@@ -43,6 +43,15 @@ log_issue() {
     ISSUES+=("|$severity|$file:$line|$description|$pattern|")
 }
 
+echo "[*] Detecting supported file types..."
+PY_FILES=$(find "$TARGET_DIR" -type f -name "*.py" 2>/dev/null | wc -l)
+JAVA_FILES=$(find "$TARGET_DIR" -type f -name "*.java" 2>/dev/null | wc -l)
+JS_FILES=$(find "$TARGET_DIR" -type f \( -name "*.js" -o -name "*.ts" \) 2>/dev/null | wc -l)
+echo "    Python files: $PY_FILES"
+echo "    Java files: $JAVA_FILES"
+echo "    JS/TS files: $JS_FILES"
+echo ""
+
 echo "[*] Scanning for credentials exposure..."
 while IFS= read -r file; do
     # Skip test files and examples
@@ -60,9 +69,9 @@ while IFS= read -r file; do
         fi
         log_issue "CRITICAL" "$file" "$linenum" "Potential hardcoded credential detected" "$content"
     done < <(grep -rnE "(api_key|apikey|secret|password|token|auth).*[=:]" "$file" 2>/dev/null || true)
-done < <(find "$TARGET_DIR" -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.json" -o -name "*.yaml" -o -name "*.yml" -o -name "*.md" \) 2>/dev/null | head -100)
+done < <(find "$TARGET_DIR" -type f \( -name "*.py" -o -name "*.java" -o -name "*.js" -o -name "*.ts" -o -name "*.json" -o -name "*.yaml" -o -name "*.yml" -o -name "*.md" -o -name "*.properties" -o -name "*.xml" \) 2>/dev/null | head -100)
 
-echo "[*] Scanning for dangerous functions..."
+echo "[*] Scanning for dangerous functions (Python)..."
 while IFS= read -r file; do
     while IFS= read -r line; do
         linenum=$(echo "$line" | cut -d: -f1)
@@ -71,7 +80,52 @@ while IFS= read -r file; do
     done < <(grep -rnE "(eval|exec|system)\s*\(" "$file" 2>/dev/null | grep -v "subprocess\|spawn\|# safe" | head -20 || true)
 done < <(find "$TARGET_DIR" -type f -name "*.py" 2>/dev/null | head -50)
 
-echo "[*] Scanning for missing input validation..."
+echo "[*] Scanning for dangerous functions (Java)..."
+while IFS= read -r file; do
+    # Runtime.getRuntime().exec() - potential command injection
+    while IFS= read -r line; do
+        linenum=$(echo "$line" | cut -d: -f1)
+        content=$(echo "$line" | cut -d: -f2-)
+        log_issue "HIGH" "$file" "$linenum" "Potential command injection (Runtime.exec)" "$content"
+    done < <(grep -rnE "Runtime\s*\.\s*getRuntime\s*\(\)\s*\.\s*exec" "$file" 2>/dev/null | head -20 || true)
+
+    # ProcessBuilder usage
+    while IFS= read -r line; do
+        linenum=$(echo "$line" | cut -d: -f1)
+        content=$(echo "$line" | cut -d: -f2-)
+        # Check if input is validated
+        next_lines=$(sed -n "${linenum},$((linenum+10))p" "$file" 2>/dev/null || true)
+        if ! echo "$next_lines" | grep -iqE "(validate|sanitize|check|isValid|whitelist)"; then
+            log_issue "MEDIUM" "$file" "$linenum" "ProcessBuilder without input validation" "$content"
+        fi
+    done < <(grep -rnE "new ProcessBuilder" "$file" 2>/dev/null | head -20 || true)
+
+    # SQL injection - PreparedStatement usage check
+    while IFS= read -r line; do
+        linenum=$(echo "$line" | cut -d: -f1)
+        content=$(echo "$line" | cut -d: -f2-)
+        # Check if using Statement instead of PreparedStatement
+        if echo "$content" | grep -qE "createStatement\s*\("; then
+            log_issue "HIGH" "$file" "$linenum" "Potential SQL injection - use PreparedStatement" "$content"
+        fi
+    done < <(grep -rnE "(Statement|Connection)\s*\." "$file" 2>/dev/null | head -30 || true)
+
+    # JNDI injection
+    while IFS= read -r line; do
+        linenum=$(echo "$line" | cut -d: -f1)
+        content=$(echo "$line" | cut -d: -f2-)
+        log_issue "HIGH" "$file" "$linenum" "JNDI injection risk" "$content"
+    done < <(grep -rnE "InitialContext\s*\.\s*lookup" "$file" 2>/dev/null | head -20 || true)
+
+    # ObjectInputStream - deserialization vulnerability
+    while IFS= read -r line; do
+        linenum=$(echo "$line" | cut -d: -f1)
+        content=$(echo "$line" | cut -d: -f2-)
+        log_issue "HIGH" "$file" "$linenum" "Deserialization vulnerability risk (ObjectInputStream)" "$content"
+    done < <(grep -rnE "ObjectInputStream" "$file" 2>/dev/null | head -20 || true)
+done < <(find "$TARGET_DIR" -type f -name "*.java" 2>/dev/null | head -50)
+
+echo "[*] Scanning for missing input validation (Python)..."
 while IFS= read -r file; do
     # Look for input handling without validation
     while IFS= read -r line; do
@@ -84,6 +138,20 @@ while IFS= read -r file; do
         fi
     done < <(grep -rnE "(input\(|user_input|request\.|args\.get|params\.)" "$file" 2>/dev/null | head -10 || true)
 done < <(find "$TARGET_DIR" -type f -name "*.py" 2>/dev/null | head -50)
+
+echo "[*] Scanning for missing input validation (Java)..."
+while IFS= read -r file; do
+    # Look for request parameters without validation
+    while IFS= read -r line; do
+        linenum=$(echo "$line" | cut -d: -f1)
+        content=$(echo "$line" | cut -d: -f2-)
+        # Check if there's validation nearby
+        next_lines=$(sed -n "${linenum},$((linenum+5))p" "$file" 2>/dev/null || true)
+        if ! echo "$next_lines" | grep -iqE "(validate|sanitize|check|assert|isValid|notNull|notEmpty)"; then
+            log_issue "MEDIUM" "$file" "$linenum" "Potential unvalidated input" "$content"
+        fi
+    done < <(grep -rnE "(request\.|getParameter|@RequestParam|@PathVariable|HttpServletRequest)" "$file" 2>/dev/null | head -10 || true)
+done < <(find "$TARGET_DIR" -type f -name "*.java" 2>/dev/null | head -50)
 
 echo "[*] Scanning for missing .gitignore entries..."
 if [ -f "$TARGET_DIR/.gitignore" ]; then
@@ -111,7 +179,7 @@ while IFS= read -r file; do
             log_issue "LOW" "$file" "$linenum" "Security-related TODO comment" "$content"
         fi
     done < <(grep -rnE "(TODO|FIXME|HACK|XXX).*(security|vuln|auth|credential|token)" "$file" 2>/dev/null | head -10 || true)
-done < <(find "$TARGET_DIR" -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" \) 2>/dev/null | head -50)
+done < <(find "$TARGET_DIR" -type f \( -name "*.py" -o -name "*.java" -o -name "*.js" -o -name "*.ts" \) 2>/dev/null | head -50)
 
 echo ""
 echo "========================================"

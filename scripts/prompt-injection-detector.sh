@@ -1,6 +1,7 @@
 #!/bin/bash
 # Prompt Injection Detector for Agent Intelligent Bodies
 # Detects patterns associated with prompt injection attacks
+# Supports: Python, Java, JavaScript, TypeScript
 
 set -e
 
@@ -63,7 +64,7 @@ for pattern in "${DIRECT_PATTERNS[@]}"; do
         file=$(echo "$line" | cut -d: -f2)
         content=$(echo "$line" | cut -d: -f3-)
         log_issue "CRITICAL" "$file" "$linenum" "Direct injection pattern: $pattern"
-    done < <(grep -rnE -i "$pattern" "$TARGET_DIR" --include="*.py" --include="*.js" --include="*.ts" --include="*.md" 2>/dev/null | head -10 || true)
+    done < <(grep -rnE -i "$pattern" "$TARGET_DIR" --include="*.py" --include="*.java" --include="*.js" --include="*.ts" --include="*.md" 2>/dev/null | head -10 || true)
 done
 
 # Layer 2: Indirect injection patterns
@@ -88,7 +89,7 @@ for pattern in "${INDIRECT_PATTERNS[@]}"; do
         file=$(echo "$line" | cut -d: -f2)
         content=$(echo "$line" | cut -d: -f3-)
         log_issue "HIGH" "$file" "$linenum" "Indirect injection pattern: $pattern"
-    done < <(grep -rnE -i "$pattern" "$TARGET_DIR" --include="*.py" --include="*.js" --include="*.ts" --include="*.md" --include="*.html" --include="*.txt" 2>/dev/null | head -10 || true)
+    done < <(grep -rnE -i "$pattern" "$TARGET_DIR" --include="*.py" --include="*.java" --include="*.js" --include="*.ts" --include="*.md" --include="*.html" --include="*.txt" --include="*.xml" --include="*.properties" 2>/dev/null | head -10 || true)
 done
 
 # Layer 3: Obfuscation detection
@@ -119,35 +120,59 @@ for pattern in "${OBFUSCATION_PATTERNS[@]}"; do
             continue
         fi
         log_issue "HIGH" "$file" "$linenum" "Obfuscation technique: $pattern"
-    done < <(grep -rnE -i "$pattern" "$TARGET_DIR" --include="*.py" --include="*.js" --include="*.ts" 2>/dev/null | head -10 || true)
+    done < <(grep -rnE -i "$pattern" "$TARGET_DIR" --include="*.py" --include="*.java" --include="*.js" --include="*.ts" 2>/dev/null | head -10 || true)
 done
 
-# Layer 4: External content handling
-echo "[*] Layer 4: Checking external content handling..."
+# Layer 4: External content handling (Python)
+echo "[*] Layer 4: Checking external content handling (Python)..."
 
-# Look for fetch/web calls without sanitization
 while IFS= read -r file; do
     content=$(cat "$file" 2>/dev/null || true)
-    if echo "$content" | grep -iqE "(fetch|requests\.|urllib|http\.get|http\.post|curl|wget|aiohttp)"; then
+    if echo "$content" | grep -iqE "(fetch|requests\.|urllib|http\.get|http\.post|curl|wget|aiohttp|httpx)"; then
         # Check if there's sanitization nearby
-        if ! echo "$content" | grep -iqE "(sanitize|validate|strip.*html|escape|html\.unescape)"; then
+        if ! echo "$content" | grep -iqE "(sanitize|validate|strip.*html|escape|html\.unescape|bleach)"; then
             log_issue "MEDIUM" "$file" "0" "External content fetched without apparent sanitization"
         fi
     fi
 done < <(find "$TARGET_DIR" -type f -name "*.py" 2>/dev/null | head -20)
 
+# Layer 4: External content handling (Java)
+echo "[*] Layer 4: Checking external content handling (Java)..."
+
+while IFS= read -r file; do
+    content=$(cat "$file" 2>/dev/null || true)
+    if echo "$content" | grep -iqE "(HttpClient|HttpURLConnection|URLConnection|OkHttp|Retrofit|RestTemplate|WebClient|closeablehttp|HttpGet|HttpPost)"; then
+        # Check if there's sanitization nearby
+        if ! echo "$content" | grep -iqE "(sanitize|validate|escape|strip|html.*unescape|xss|htmlSanitizer)"; then
+            log_issue "MEDIUM" "$file" "0" "External HTTP call without apparent input sanitization"
+        fi
+    fi
+done < <(find "$TARGET_DIR" -type f -name "*.java" 2>/dev/null | head -20)
+
 # Layer 5: Output rendering
 echo "[*] Layer 5: Checking output rendering safety..."
 
+# Python rendering
 while IFS= read -r file; do
     content=$(cat "$file" 2>/dev/null || true)
     # Check for dangerous output methods
     if echo "$content" | grep -iqE "(execute.*output|render.*html|safe.*html|allow.*html)"; then
-        if ! echo "$content" | grep -iqE "(markdown|strip.*tags|bleach|safe.*render)"; then
+        if ! echo "$content" | grep -iqE "(markdown|strip.*tags|bleach|safe.*render|markupsafe)"; then
             log_issue "MEDIUM" "$file" "0" "Potential unsafe HTML rendering"
         fi
     fi
 done < <(find "$TARGET_DIR" -type f -name "*.py" 2>/dev/null | head -20)
+
+# Java XSS concerns
+while IFS= read -r file; do
+    content=$(cat "$file" 2>/dev/null || true)
+    if echo "$content" | grep -iqE "(response\.getWriter|PrintWriter|out\.print|setContentType)"; then
+        # Check for XSS protection
+        if ! echo "$content" | grep -iqE "(escapeHtml|html.*escape|xss|encoder|StringEscapeUtils|sanitize)"; then
+            log_issue "MEDIUM" "$file" "0" "Potential XSS vulnerability in output"
+        fi
+    fi
+done < <(find "$TARGET_DIR" -type f -name "*.java" 2>/dev/null | head -20)
 
 # Layer 6: Defense patterns check
 echo "[*] Layer 6: Checking for defense mechanisms..."
@@ -163,7 +188,7 @@ DEFENSE_PATTERNS=(
 
 DEFENSE_COUNT=0
 for pattern in "${DEFENSE_PATTERNS[@]}"; do
-    if grep -rqE -i "$pattern" "$TARGET_DIR" --include="*.py" --include="*.md" 2>/dev/null; then
+    if grep -rqE -i "$pattern" "$TARGET_DIR" --include="*.py" --include="*.java" --include="*.js" --include="*.md" 2>/dev/null; then
         ((DEFENSE_COUNT++))
     fi
 done
