@@ -21,7 +21,26 @@ All notable changes to this project will be documented in this file.
 
 #### Key Patterns Identified
 
-**1. Rule-Based Architecture**
+**1. Rule-Based Architecture (ferret-scan, sinewaveai)**
+
+ferret-scan defines specific vulnerability codes:
+- `CRED-XXX`: Credential exposure issues
+- `INJ-XXX`: Injection vulnerabilities
+- `EXFL-XXX`: Data exfiltration
+- `BACK-XXX`: Backdoor detection
+
+Example structure:
+```typescript
+{
+  id: "INJ-003",
+  name: "Prompt Injection Pattern",
+  severity: "HIGH",
+  patterns: ["ignore previous instructions", "you are now a DAN"],
+  fix: "Remove or sanitize instruction override"
+}
+```
+
+**2. Rule-Based Architecture**
 - YAML-based rule definitions with id, severity, patterns, metadata
 - CWE and OWASP mappings for each rule
 - Language-specific detection patterns
@@ -61,10 +80,20 @@ Advanced scanners use Abstract Syntax Tree parsing:
 - Control flow analysis
 - Semantic security checks
 
-**5. MCP Configuration Scanning**
-- scan of MCP server configurations
-- Tool poisoning detection
-- Context isolation verification
+**5. MCP Configuration Scanning (Tencent AI-Infra-Guard)**
+- `agent-scan/`: Agent security scanning module
+- `mcp-scan/`: MCP server vulnerability scanning
+- AIG-PromptSecurity: Prompt injection detection
+- Tool poisoning detection via MCP universal connector
+
+**6. ferret-scan Threat Categories**
+| Category | Examples |
+|----------|----------|
+| Prompt Injection | Hidden instructions in markdown, jailbreak attempts |
+| Credential Exposure | Hardcoded API keys in MCP configs |
+| Data Exfiltration | Malicious hooks stealing conversation data |
+| Backdoors | Persistence mechanisms in shell scripts |
+| ReDoS | Regex denial of service via greedy quantifiers |
 
 #### Gaps Identified in Current Implementation
 
@@ -123,15 +152,21 @@ Advanced scanners use Abstract Syntax Tree parsing:
 
 ## Future Enhancements (From Research)
 
-### Planned
-- [ ] OWASP Agentic Top 10 rule mapping
-- [ ] LangChain-specific security rules
-- [ ] CrewAI-specific security rules
-- [ ] AutoGen-specific security rules
-- [ ] YAML-based rule externalization
-- [ ] MCP configuration scanning
-- [ ] AST-based taint analysis
+### Implemented in v0.3.0
+- [x] OWASP Agentic Top 10 rule mapping
+- [x] LangChain-specific security rules
+- [x] CrewAI-specific security rules
+- [x] AutoGen-specific security rules
+- [x] YAML-based rule externalization
+- [x] MCP configuration scanning
+
+### Planned for Future
+- [ ] AST-based taint analysis (semantic code understanding)
 - [ ] Package hallucination detection
+- [ ] Multi-turn conversation injection testing
+- [ ] Credential exfiltration detection
+- [ ] JSON Schema validation for rule files
+- [ ] CI/CD integration examples
 
 ### Reference Sources
 - https://github.com/HeadyZhang/agent-audit (OWASP mapping)
