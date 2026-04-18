@@ -1,0 +1,204 @@
+# Python Security Rules
+# Format: Semgrep-like YAML rules for pattern matching
+
+rules:
+  # ============================================================================
+  # PROMPT INJECTION RULES
+  # ============================================================================
+
+  - id: python.llm.prompt-injection.fstring-in-template
+    severity: ERROR
+    message: "User input interpolated into LLM prompt template - potential prompt injection"
+    patterns:
+      - "PromptTemplate\\s*\\([^)]*template\\s*=\\s*f[\"']"
+      - "ChatPromptTemplate\\.from_template\\s*\\([^)]*f[\"']"
+      - "ChatPromptTemplate\\.from_messages\\s*\\([^)]*f[\"']"
+      - "SystemMessagePromptTemplate\\.from_template\\s*\\(\\s*f[\"']"
+    cwe: CWE-77
+    owasp: LLMO1, ASI-01
+    framework: langchain
+
+  - id: python.llm.prompt-injection.chain-run-concat
+    severity: ERROR
+    message: "User input concatenated directly into LLMChain.run() - potential prompt injection"
+    patterns:
+      - "chain\\.run\\s*\\([^)]*\\+"
+      - "chain\\.run\\s*\\(\\s*f[\"']"
+      - "LLMChain.*\\.run\\s*\\([^)]*\\+"
+    cwe: CWE-77
+    owasp: LLMO1, ASI-01
+    framework: langchain
+
+  - id: python.llm.prompt-injection.agent-run-concat
+    severity: ERROR
+    message: "User input concatenated into agent execution - potential goal hijacking"
+    patterns:
+      - "agent\\.run\\s*\\(\\s*[^)]*\\+"
+      - "agent\\.run\\s*\\(\\s*f[\"']"
+      - "AgentExecutor.*\\.run\\s*\\([^)]*\\+"
+    cwe: CWE-77
+    owasp: ASI-01
+    framework: langchain
+
+  - id: python.llm.prompt-injection.llamaindex-query-concat
+    severity: ERROR
+    message: "User input concatenated into LlamaIndex query - potential prompt injection"
+    patterns:
+      - "index\\.query\\s*\\(\\s*f[\"']"
+      - "index\\.query\\s*\\([^)]*\\+"
+      - "query_engine\\.query\\s*\\(\\s*f[\"']"
+      - "query_engine\\.query\\s*\\([^)]*\\+"
+    cwe: CWE-77
+    owasp: LLMO1, ASI-01
+    framework: llamaindex
+
+  - id: python.llm.prompt-injection.openai-messages-fstring
+    severity: ERROR
+    message: "User input in OpenAI messages via f-string - potential prompt injection"
+    patterns:
+      - "client\\.chat\\.completions\\.create\\s*\\([^)]*messages\\s*=.*f[\"']"
+      - "openai\\.ChatCompletion\\.create\\s*\\([^)]*messages\\s*=.*f[\"']"
+      - "messages\\.append\\s*\\(\\s*\\{[^}]*[\"']content[\"']\\s*:\\s*f[\"']"
+    cwe: CWE-77
+    owasp: LLMO1
+    framework: openai
+
+  - id: python.llm.prompt-injection.anthropic-content-concat
+    severity: ERROR
+    message: "User input concatenated into Anthropic messages - potential prompt injection"
+    patterns:
+      - "anthropic\\.messages\\.create\\s*\\([^)]*content\\s*=.*\\+"
+      - "client\\.messages\\.create\\s*\\([^)]*content\\s*=\\s*f[\"']"
+      - "messages\\.create.*content.*\\+.*user"
+    cwe: CWE-77
+    owasp: LLMO1
+    framework: anthropic
+
+  # ============================================================================
+  # COMMAND INJECTION RULES
+  # ============================================================================
+
+  - id: python.security.command-injection.subprocess-shell
+    severity: ERROR
+    message: "subprocess with shell=True is dangerous with user input"
+    patterns:
+      - "subprocess\\.call\\s*\\([^)]*shell\\s*=\\s*True"
+      - "subprocess\\.run\\s*\\([^)]*shell\\s*=\\s*True"
+      - "subprocess\\.Popen\\s*\\([^)]*shell\\s*=\\s*True"
+      - "subprocess\\.check_output\\s*\\([^)]*shell\\s*=\\s*True"
+    cwe: CWE-78
+    owasp: A03:2021
+
+  - id: python.security.command-injection.os-system
+    severity: ERROR
+    message: "os.system() can lead to command injection"
+    patterns:
+      - "os\\.system\\s*\\("
+      - "os\\.popen\\s*\\("
+      - "os\\.spawn[lv]?[pe]?\\s*\\("
+    cwe: CWE-78
+    owasp: A03:2021
+
+  - id: python.security.command-injection.eval
+    severity: ERROR
+    message: "eval() can execute arbitrary code"
+    patterns:
+      - "\\beval\\s*\\("
+    cwe: CWE-94
+    owasp: A03:2021
+
+  - id: python.security.command-injection.exec
+    severity: ERROR
+    message: "exec() can execute arbitrary code"
+    patterns:
+      - "\\bexec\\s*\\("
+    cwe: CWE-94
+    owasp: A03:2021
+
+  # ============================================================================
+  # SQL INJECTION RULES
+  # ============================================================================
+
+  - id: python.security.sql-injection.cursor-execute
+    severity: ERROR
+    message: "SQL query built with string concatenation - use parameterized queries"
+    patterns:
+      - "cursor\\.execute\\s*\\(\\s*[\"'][^\"']*%.*\""
+      - "cursor\\.execute\\s*\\(\\s*f[\"']"
+      - "cursor\\.execute\\s*\\([^,)]+\\s*\\+\\s*"
+      - "cursor\\.execute\\s*\\([\"'].*\\.format\\s*\\("
+    cwe: CWE-89
+    owasp: A03:2021
+
+  - id: python.security.sql-injection.sqlalchemy-raw
+    severity: ERROR
+    message: "SQLAlchemy raw query with string concatenation - use parameterized queries"
+    patterns:
+      - "text\\s*\\(\\s*f[\"']"
+      - "text\\s*\\(\\s*[^)]+\\+"
+      - "\\.execute\\s*\\(\\s*f[\"']SELECT"
+    cwe: CWE-89
+    owasp: A03:2021
+
+  - id: python.security.sql-injection.django-raw
+    severity: ERROR
+    message: "Django raw query with string concatenation - use ORM or parameterized queries"
+    patterns:
+      - "\\.raw\\s*\\(\\s*f[\"']"
+      - "\\.raw\\s*\\(\\s*[^)]+\\+"
+      - "\\.extra\\s*\\(.*where.*\\+.*\\)"
+    cwe: CWE-89
+    owasp: A03:2021
+
+  # ============================================================================
+  # CREDENTIAL EXPOSURE RULES
+  # ============================================================================
+
+  - id: python.security.credentials.hardcoded-secret
+    severity: ERROR
+    message: "Hardcoded credential detected - use environment variables or secrets manager"
+    patterns:
+      - "api_key\\s*=\\s*[\"'][^\"']{20,}[\"']"
+      - "apikey\\s*=\\s*[\"'][^\"']{20,}[\"']"
+      - "secret\\s*=\\s*[\"'][^\"']{20,}[\"']"
+      - "password\\s*=\\s*[\"'][^\"']{8,}[\"']"
+      - "token\\s*=\\s*[\"'][^\"']{20,}[\"']"
+    cwe: CWE-798
+    owasp: A07:2021
+
+  # ============================================================================
+  # DESERIALIZATION RULES
+  # ============================================================================
+
+  - id: python.security.deserialization.pickle
+    severity: ERROR
+    message: "pickle.loads() can deserialize arbitrary code - use safer alternatives"
+    patterns:
+      - "pickle\\.loads\\s*\\("
+      - "pickle\\.load\\s*\\("
+      - "cloudpickle\\.loads\\s*\\("
+    cwe: CWE-502
+    owasp: A08:2021
+
+  - id: python.security.deserialization.yaml-unsafe
+    severity: ERROR
+    message: "yaml.load() without Loader is unsafe - use yaml.safe_load()"
+    patterns:
+      - "yaml\\.load\\s*\\([^)]*\\)"
+      - "yaml\\.load_all\\s*\\("
+    cwe: CWE-502
+    owasp: A08:2021
+
+  # ============================================================================
+  # PATH TRAVERSAL RULES
+  # ============================================================================
+
+  - id: python.security.path-traversal.open
+    severity: ERROR
+    message: "file open() with user-controlled path - validate and sanitize input"
+    patterns:
+      - "open\\s*\\([^)]*\\+\\s*[^)]*\\)"
+      - "Path\\s*\\([^)]*\\+\\s*[^)]*\\)"
+      - "Path\\s*\\([^)]*user"
+    cwe: CWE-22
+    owasp: A01:2021
