@@ -86,10 +86,10 @@ for file in "${MCP_CONFIG_FILES[@]}"; do
     while IFS= read -r line; do
         linenum=$(echo "$line" | cut -d: -f1)
         content=$(echo "$line" | cut -d: -f2-)
-        if echo "$content" | grep -qE "\$(.*\)|`.*`"; then
+        if echo "$content" | grep -qE '\$\(.*\)|`.*`'; then
             log_issue "CRITICAL" "$file" "$linenum" "Command substitution in MCP config - potential injection"
         fi
-    done < <(grep -rnE "\$\(|`" "$file" 2>/dev/null || true)
+    done < <(grep -rnE '\$\(|`' "$file" 2>/dev/null || true)
 
     # Check for overly permissive settings
     while IFS= read -r line; do
